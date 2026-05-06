@@ -10,16 +10,23 @@
 # entry with the corresponding source interface and a timestamp.
 # 
 # Usage:
-# Use the -i flag for each source interface and the -t flag for each target IP 
-# address. You must provide at least one of each.
+# Targets are bound to specific interfaces. You must define an interface using 
+# the -i flag FIRST, followed by one or more -t flags for the IPs you want to 
+# ping from that specific interface. You can declare multiple interfaces and 
+# assign unique targets to each.
 # 
-# ./ping_script.sh -i <interface1> [-i <interface2> ...] -t <target_ip1> [-t <target_ip2> ...]
+# Syntax:
+# ./ping_script.sh -i <interface1> -t <target_ip1> [-t <target_ip2> ...] \
+#                  [-i <interface2> -t <target_ip3> ...]
 # 
 # Example:
-# To ping Google DNS and Cloudflare DNS using both your ISP2 (eth0) and 
-# ISP2 (eth1) interfaces, run:
+# To ping Google DNS from your WAN interface (eth0) and an internal gateway 
+# from your LAN interface (eth1), run:
 # 
-# ./ping_script.sh -i eth0 -i eth1 -t 8.8.8.8 -t 1.1.1.1
+# ./ping_script.sh -i eth0 -t 8.8.8.8 -t 1.1.1.1 -i eth1 -t 192.168.1.1
+# 
+# Requirements:
+# Bash 4.0 or higher is required (utilizes associative arrays).
 # ==============================================================================
 
 # Base log file name
