@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# WARNING the fc_load script is only available on version >=6.3
+
+# Main log settings
+MAIN_LOG_FILE="system_monitor.log"
+MAX_SIZE_MB=50
+MAX_SIZE_KB=$((MAX_SIZE_MB * 1024))
+MAX_SIZE_BYTES=$((MAX_SIZE_KB * 1024)) # Converted to bytes for easier file size checking
+
+# Command to execute
+CMD="/usr/lib/lion/fc_load.py"
+
+# Function to handle log rotation
+rotate_log_if_needed() {
+    if [ -f "$MAIN_LOG_FILE" ]; then
+        # Get current file size in bytes
+        FILE_SIZE=$(stat -c%s "$MAIN_LOG_FILE")
+        
+        # If the file exceeds our max size, rotate it
+        if [ "$FILE_SIZE" -ge "$MAX_SIZE_BYTES" ]; then
+            # Append a timestamp to the rotated file so it isn't overwritten
+            ROTATION_TIME=$(date +"%Y%m%d_%H%M%S")
+            mv "$MAIN_LOG_FILE" "${MAIN_LOG_FILE}.${ROTATION_TIME}.bak"
+            echo "Log rotated at $ROTATION_TIME" > "$MAIN_LOG_FILE"
+        fi
+    fi
+}
+
+echo "Starting execution loop. Logging to $MAIN_LOG_FILE..."
+
+# Main loop
+while true; do
+    # 1. Check if we need to rotate the log before writing to it
+    rotate_log_if_needed
+
+    # 2. Print an easily parsable timestamp just before execution
+    # Format: [YYYY-MM-DD HH:MM:SS]
+    echo "[$(date +"%Y-%m-%d %H:%M:%S")]" >> "$MAIN_LOG_FILE"
+
+    # 3. Execute the command and append both stdout and stderr to the log
+    $CMD >> "$MAIN_LOG_FILE" 2>&1
+
+    # 4. Wait 30 seconds before the next run
+    sleep 30
+done
