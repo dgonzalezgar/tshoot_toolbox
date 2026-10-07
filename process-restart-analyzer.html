@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Process Restart Analyzer</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:    #0F172A;
+    --surf:  #1E293B;
+    --surf2: #273549;
+    --brd:   #334155;
+    --text:  #F1F5F9;
+    --muted: #94A3B8;
+    --hi:    #38BDF8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size: 14px; }
+
+  /* Upload */
+  #upload-zone {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 100vh; gap: 16px;
+  }
+  #upload-zone h1 { font-size: 24px; font-weight: 700; }
+  #drop-area {
+    border: 2px dashed var(--brd); border-radius: 12px; padding: 48px 72px;
+    text-align: center; cursor: pointer; background: var(--surf);
+    transition: border-color .2s, background .2s;
+  }
+  #drop-area.over { border-color: var(--hi); background: #0F2942; }
+  #drop-area svg { width: 48px; height: 48px; color: var(--muted); margin-bottom: 12px; }
+  #drop-area strong { color: var(--text); font-size: 15px; }
+  #drop-area p { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  #file-input { display: none; }
+
+  .btn-ghost {
+    background: transparent; color: var(--muted); border: 1px solid var(--brd);
+    border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px;
+    transition: border-color .15s, color .15s;
+  }
+  .btn-ghost:hover { border-color: var(--hi); color: var(--hi); }
+
+  /* App */
+  #app { display: none; flex-direction: column; min-height: 100vh; }
+  header {
+    background: var(--surf); border-bottom: 1px solid var(--brd);
+    padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .tag { background: var(--surf2); color: var(--hi); border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+  main { padding: 20px 24px; display: flex; flex-direction: column; gap: 18px; }
+
+  /* Filters */
+  .filter-bar {
+    background: var(--surf); border: 1px solid var(--brd); border-radius: 10px;
+    padding: 14px 18px; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+  }
+  .fg { display: flex; flex-direction: column; gap: 4px; }
+  .fg label { font-size: 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+  .fg input[type=date] {
+    background: var(--surf2); border: 1px solid var(--brd); color: var(--text);
+    border-radius: 6px; padding: 6px 10px; font-size: 13px; min-width: 140px;
+  }
+  .fg input[type=date]:focus { outline: none; border-color: var(--hi); }
+  #active-badge { color: var(--hi); font-size: 12px; font-weight: 600; align-self: flex-end; }
+
+  /* Searchable select */
+  .sel-wrap { position: relative; min-width: 140px; }
+  .sel-input {
+    background: var(--surf2); border: 1px solid var(--brd); color: var(--text);
+    border-radius: 6px; padding: 6px 26px 6px 10px; font-size: 13px; width: 100%;
+    cursor: pointer;
+  }
+  .sel-input:focus { outline: none; border-color: var(--hi); cursor: text; }
+  .sel-input::placeholder { color: var(--muted); }
+  .sel-arrow { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--muted); font-size: 10px; }
+  .sel-drop {
+    display: none; position: absolute; top: calc(100% + 3px); left: 0;
+    background: var(--surf); border: 1px solid var(--hi); border-radius: 6px;
+    z-index: 200; min-width: 100%; max-height: 200px; overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  }
+  .sel-drop.open { display: block; }
+  .sel-opt { padding: 7px 12px; font-size: 13px; cursor: pointer; color: var(--muted); white-space: nowrap; }
+  .sel-opt:hover { background: var(--surf2); color: var(--text); }
+  .sel-opt.active { color: var(--hi); font-weight: 600; }
+  .sel-no-match { padding: 7px 12px; font-size: 12px; color: var(--muted); font-style: italic; }
+
+  /* Stats */
+  .stats-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
+  .tile {
+    background: var(--surf); border: 1px solid var(--brd); border-radius: 10px;
+    padding: 16px 20px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .tile .lbl { font-size: 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+  .tile .val { font-size: 30px; font-weight: 700; line-height: 1; }
+  .tile.hi .val { color: var(--hi); }
+  .tile .sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Card */
+  .card {
+    background: var(--surf); border: 1px solid var(--brd); border-radius: 10px;
+    padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .card h2 { font-size: 13px; font-weight: 600; }
+  .card h2 .note { font-weight: 400; color: var(--muted); font-size: 12px; }
+
+  /* Charts */
+  .charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+
+  /* Heatmap */
+  .hm-scroll { overflow-x: auto; }
+  .hm { border-collapse: collapse; font-size: 11px; }
+  .hm th {
+    background: var(--surf2); color: var(--muted); font-weight: 600;
+    padding: 4px 8px; border: 1px solid var(--brd); white-space: nowrap;
+    position: sticky; left: 0; z-index: 2; text-align: left;
+  }
+  .hm th.wk { position: static; text-align: center; font-size: 10px; min-width: 32px; }
+  .hm td { border: 1px solid var(--brd); padding: 3px 5px; text-align: center; font-size: 11px; font-weight: 600; min-width: 32px; }
+  .hm td.dn {
+    background: var(--surf2); color: var(--text); font-weight: 500; font-size: 12px;
+    text-align: left; padding: 4px 10px; white-space: nowrap;
+    position: sticky; left: 0; z-index: 1;
+  }
+  .hm td:not(.dn):hover { outline: 2px solid var(--hi); }
+  .legend-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+  .legend-sw { width: 80px; height: 10px; border-radius: 3px; background: linear-gradient(to right,#1E293B,#0EA5E9,#0369A1); }
+
+  /* Patterns */
+  .pg { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pc { background: var(--surf2); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .pc h3 { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .pi {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 10px; background: var(--surf); border-radius: 6px; font-size: 12px; gap: 8px;
+  }
+  .pi .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { background: var(--surf2); color: var(--text); border-radius: 4px; padding: 1px 7px; font-size: 11px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+  .badge.warn { background: #78350F; color: #FCD34D; }
+  .badge.crit { background: #7F1D1D; color: #FCA5A5; }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px; }
+
+  /* Table */
+  .tbl-wrap { overflow-x: auto; max-height: 400px; overflow-y: auto; border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  thead th {
+    background: var(--surf2); color: var(--muted); font-weight: 600;
+    padding: 8px 12px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--brd);
+    cursor: pointer; user-select: none; position: sticky; top: 0;
+  }
+  thead th:hover { color: var(--hi); }
+  thead th.asc::after  { content: ' ↑'; color: var(--hi); }
+  thead th.desc::after { content: ' ↓'; color: var(--hi); }
+  tbody tr { border-bottom: 1px solid var(--brd); }
+  tbody tr:hover { background: var(--surf2); }
+  tbody td { padding: 7px 12px; white-space: nowrap; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .tbl-hdr { display: flex; justify-content: space-between; align-items: center; }
+  #tbl-count { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- Upload -->
+<div id="upload-zone">
+  <h1>Process Restart Analyzer</h1>
+  <p style="color:var(--muted)">Visualize and detect patterns in XSIAM process restart exports</p>
+  <div id="drop-area">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path stroke-linecap="round" stroke-linejoin="round"
+        d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.338-2.32 5.75 5.75 0 0 1 .847 11.095"/>
+    </svg>
+    <strong>Drop CSV here</strong>
+    <p>or click to browse</p>
+    <p style="font-size:11px;margin-top:10px">Columns: element_name · process_name · raised_time · site_name · model_name · device_version</p>
+  </div>
+  <input type="file" id="file-input" accept=".csv">
+</div>
+
+<!-- App -->
+<div id="app">
+  <header>
+    <div>
+      <h1>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23-.693L5 14.5m14.8.8 1.402 1.402c1 1 .3 2.7-1.1 2.7H3.9c-1.4 0-2.1-1.7-1.1-2.7L4.2 15.3"/>
+        </svg>
+        Process Restart Analyzer
+      </h1>
+      <div class="sub" id="file-label"></div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span class="tag" id="tenant-tag"></span>
+      <button class="btn-ghost" onclick="document.getElementById('file-input').click()">Load CSV</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Filters -->
+    <div class="filter-bar">
+      <div class="fg"><label>Date from</label><input type="date" id="ff"></div>
+      <div class="fg"><label>Date to</label>  <input type="date" id="ft"></div>
+      <div class="fg"><label>Process</label>
+        <div class="sel-wrap"><input class="sel-input" id="fp-input" placeholder="All" autocomplete="off"><span class="sel-arrow">▾</span><div class="sel-drop" id="fp-drop"></div></div>
+      </div>
+      <div class="fg"><label>Device</label>
+        <div class="sel-wrap"><input class="sel-input" id="fd-input" placeholder="All" autocomplete="off"><span class="sel-arrow">▾</span><div class="sel-drop" id="fd-drop"></div></div>
+      </div>
+      <div class="fg"><label>Site</label>
+        <div class="sel-wrap"><input class="sel-input" id="fs-input" placeholder="All" autocomplete="off"><span class="sel-arrow">▾</span><div class="sel-drop" id="fs-drop"></div></div>
+      </div>
+      <div class="fg"><label>Model</label>
+        <div class="sel-wrap"><input class="sel-input" id="fm-input" placeholder="All" autocomplete="off"><span class="sel-arrow">▾</span><div class="sel-drop" id="fm-drop"></div></div>
+      </div>
+      <div class="fg"><label>Version</label>
+        <div class="sel-wrap"><input class="sel-input" id="fv-input" placeholder="All" autocomplete="off"><span class="sel-arrow">▾</span><div class="sel-drop" id="fv-drop"></div></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-left:auto;align-self:flex-end">
+        <span id="active-badge"></span>
+        <button class="btn-ghost" onclick="resetFilters()">Reset</button>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-row">
+      <div class="tile hi">
+        <div class="lbl">Total Restarts</div>
+        <div class="val" id="s-total">—</div>
+        <div class="sub" id="s-span">—</div>
+      </div>
+      <div class="tile">
+        <div class="lbl">Unique Devices</div>
+        <div class="val" id="s-devs">—</div>
+        <div class="sub" id="s-sites">—</div>
+      </div>
+      <div class="tile">
+        <div class="lbl">Most Restarted Device</div>
+        <div class="val" id="s-topdev-n">—</div>
+        <div class="sub" id="s-topdev">—</div>
+      </div>
+      <div class="tile">
+        <div class="lbl">Most Common Process</div>
+        <div class="val" id="s-topproc-n">—</div>
+        <div class="sub" id="s-topproc">—</div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-row">
+      <div class="card">
+        <h2>Restarts by Device</h2>
+        <div id="ch-dev-wrap" style="position:relative">
+          <canvas id="ch-dev"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Process Distribution</h2>
+        <canvas id="ch-proc" height="280"></canvas>
+      </div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="card">
+      <h2>Timeline <span class="note">— restarts per day</span></h2>
+      <div style="position:relative;height:130px">
+        <canvas id="ch-time"></canvas>
+      </div>
+    </div>
+
+    <!-- Version Breakdown -->
+    <div class="card">
+      <h2>Restarts by Version <span class="note">— stacked by process</span></h2>
+      <div id="ch-ver-wrap" style="position:relative;height:220px">
+        <canvas id="ch-ver"></canvas>
+      </div>
+      <div id="ver-table-wrap" style="margin-top:14px;overflow-x:auto"></div>
+    </div>
+
+    <!-- Heatmap -->
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <h2>Device × Week Heatmap <span class="note">— count per week</span></h2>
+        <div class="legend-row"><span>0</span><div class="legend-sw"></div><span>high</span></div>
+      </div>
+      <div class="hm-scroll" id="hm-wrap"></div>
+    </div>
+
+    <!-- Patterns -->
+    <div class="card">
+      <h2>Pattern Summary</h2>
+      <div class="pg" id="patterns"></div>
+    </div>
+
+    <!-- Table -->
+    <div class="card">
+      <div class="tbl-hdr">
+        <h2>Event Log</h2>
+        <span id="tbl-count"></span>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th data-col="raised_time">Timestamp</th>
+            <th data-col="element_name">Device</th>
+            <th data-col="process_name">Process</th>
+            <th data-col="site_name">Site</th>
+            <th data-col="model_name">Model</th>
+            <th data-col="device_version">Version</th>
+            <th data-col="hardware_id">Hardware ID</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+'use strict';
+
+// D3 Tableau10 palette
+const CAT = ['#4E79A7','#F28E2B','#E15759','#76B7B2','#59A14F','#EDC948','#B07AA1','#FF9DA7','#9C755F','#BAB0AC'];
+function catColor(i) { return CAT[i % CAT.length]; }
+
+// Fixed color per process name
+const _pidx = {};
+function procColor(name) {
+  if (_pidx[name] === undefined) _pidx[name] = Object.keys(_pidx).length;
+  return catColor(_pidx[name]);
+}
+
+// Sequential blue heatmap: navy → sky
+function heatColor(v, max) {
+  if (!v || !max) return '#1E293B';
+  const t = Math.min(v / max, 1);
+  return `rgb(${~~(30+t*(3-30))},${~~(41+t*(105-41))},${~~(59+t*(161-59))})`;
+}
+function heatText(v, max) { return (!max || v/max < 0.55) ? '#94A3B8' : '#F1F5F9'; }
+
+// ── State ───────────────────────────────────────────────────────────────────
+let allRows = [];
+const charts = {};
+let sortCol = 'raised_time', sortDir = 1;
+
+// ── CSV parse ───────────────────────────────────────────────────────────────
+function splitCsvLine(line) {
+  const out = []; let cur = ''; let q = false;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '"') { q = !q; continue; }
+    if (line[i] === ',' && !q) { out.push(cur); cur = ''; continue; }
+    cur += line[i];
+  }
+  out.push(cur);
+  return out;
+}
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/);
+  const headers = splitCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim());
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const vals = splitCsvLine(lines[i]).map(v => v.replace(/^"|"$/g,'').trim());
+    if (vals.length < headers.length - 1) continue;
+    const row = {};
+    headers.forEach((h,j) => row[h] = (vals[j] || '').trim());
+    // parse "2026-07-07 12:42:24" → Date (treat as UTC)
+    row._date = row.raised_time ? new Date(row.raised_time.replace(' ','T')+'Z') : null;
+    rows.push(row);
+  }
+  return rows;
+}
+
+// ── File load ────────────────────────────────────────────────────────────────
+function loadFile(file) {
+  const r = new FileReader();
+  r.onload = e => {
+    allRows = parseCSV(e.target.result);
+    if (!allRows.length) { alert('No data rows parsed from this file.'); return; }
+    document.getElementById('file-label').textContent = `${file.name}  ·  ${allRows.length} events`;
+    const tsg = allRows[0].tenant_service_group;
+    document.getElementById('tenant-tag').textContent = tsg ? `Tenant ${tsg}` : '';
+    document.getElementById('upload-zone').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    buildFilters(allRows);
+    render(allRows);
+  };
+  r.readAsText(file);
+}
+
+const dropEl = document.getElementById('drop-area');
+const fileEl = document.getElementById('file-input');
+dropEl.addEventListener('click', () => fileEl.click());
+dropEl.addEventListener('dragover',  e => { e.preventDefault(); dropEl.classList.add('over'); });
+dropEl.addEventListener('dragleave', () => dropEl.classList.remove('over'));
+dropEl.addEventListener('drop', e => { e.preventDefault(); dropEl.classList.remove('over'); if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+fileEl.addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+
+// ── Filters ──────────────────────────────────────────────────────────────────
+function toISO(d) { return d.toISOString().slice(0,10); }
+
+// Searchable select state
+const _selValues  = { fp: '', fd: '', fs: '', fm: '', fv: '' };
+const _selOptions = { fp: [], fd: [], fs: [], fm: [], fv: [] };
+
+function showDrop(id, query) {
+  const drop = document.getElementById(id + '-drop');
+  const q = (query || '').toLowerCase();
+  const matches = _selOptions[id].filter(v => v.toLowerCase().includes(q));
+  let html = `<div class="sel-opt${_selValues[id] === '' ? ' active' : ''}" data-val="">All</div>`;
+  if (matches.length) {
+    matches.forEach(v => {
+      html += `<div class="sel-opt${_selValues[id] === v ? ' active' : ''}" data-val="${v.replace(/"/g,'&quot;')}">${v}</div>`;
+    });
+  } else {
+    html += '<div class="sel-no-match">No matches</div>';
+  }
+  drop.innerHTML = html;
+  drop.querySelectorAll('.sel-opt').forEach(el => {
+    el.addEventListener('mousedown', e => { e.preventDefault(); selectOpt(id, el.dataset.val); });
+  });
+  drop.classList.add('open');
+}
+
+function closeDrop(id) {
+  const drop = document.getElementById(id + '-drop');
+  drop.classList.remove('open');
+  // restore display to the current value
+  const inp = document.getElementById(id + '-input');
+  inp.value = _selValues[id] || '';
+  inp.placeholder = _selValues[id] ? '' : 'All';
+}
+
+function selectOpt(id, value) {
+  _selValues[id] = value;
+  const inp = document.getElementById(id + '-input');
+  inp.value = value;
+  inp.placeholder = value ? '' : 'All';
+  document.getElementById(id + '-drop').classList.remove('open');
+  render(applyFilters());
+}
+
+function buildSearchSelect(id) {
+  const inp = document.getElementById(id + '-input');
+  inp.addEventListener('focus', () => { inp.value = ''; showDrop(id, ''); });
+  inp.addEventListener('input', () => showDrop(id, inp.value));
+  inp.addEventListener('blur',  () => setTimeout(() => closeDrop(id), 150));
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { inp.blur(); }
+    if (e.key === 'Enter') {
+      const first = document.querySelector(`#${id}-drop .sel-opt`);
+      if (first) { selectOpt(id, first.dataset.val); inp.blur(); }
+    }
+  });
+}
+
+function setSelOptions(id, vals) {
+  _selOptions[id] = [...new Set(vals)].filter(Boolean).sort();
+  if (_selValues[id] && !_selOptions[id].includes(_selValues[id])) {
+    _selValues[id] = '';
+  }
+  const inp = document.getElementById(id + '-input');
+  inp.value = _selValues[id] || '';
+  inp.placeholder = _selValues[id] ? '' : 'All';
+}
+
+function buildFilters(rows) {
+  const dates = rows.map(r => r._date).filter(Boolean);
+  if (dates.length) {
+    document.getElementById('ff').value = toISO(new Date(Math.min(...dates)));
+    document.getElementById('ft').value = toISO(new Date(Math.max(...dates)));
+  }
+  setSelOptions('fp', rows.map(r => r.process_name));
+  setSelOptions('fd', rows.map(r => r.element_name));
+  setSelOptions('fs', rows.map(r => r.site_name));
+  setSelOptions('fm', rows.map(r => r.model_name));
+  setSelOptions('fv', rows.map(r => r.device_version));
+}
+
+function getFilters() {
+  return {
+    from:    document.getElementById('ff').value,
+    to:      document.getElementById('ft').value,
+    process: _selValues['fp'],
+    device:  _selValues['fd'],
+    site:    _selValues['fs'],
+    model:   _selValues['fm'],
+    ver:     _selValues['fv'],
+  };
+}
+
+function applyFilters() {
+  const f = getFilters();
+  return allRows.filter(r => {
+    const d = r._date;
+    if (f.from && d && d < new Date(f.from+'T00:00:00Z')) return false;
+    if (f.to   && d && d > new Date(f.to  +'T23:59:59Z')) return false;
+    if (f.process && r.process_name   !== f.process) return false;
+    if (f.device  && r.element_name   !== f.device)  return false;
+    if (f.site    && r.site_name      !== f.site)    return false;
+    if (f.model   && r.model_name     !== f.model)   return false;
+    if (f.ver     && r.device_version !== f.ver)     return false;
+    return true;
+  });
+}
+
+function resetFilters() {
+  ['fp','fd','fs','fm','fv'].forEach(id => { _selValues[id] = ''; });
+  buildFilters(allRows);
+  render(allRows);
+}
+
+// Close any open dropdown when clicking outside
+document.addEventListener('click', e => {
+  ['fp','fd','fs','fm','fv'].forEach(id => {
+    const wrap = document.getElementById(id + '-input')?.closest('.sel-wrap');
+    if (wrap && !wrap.contains(e.target)) {
+      document.getElementById(id + '-drop').classList.remove('open');
+    }
+  });
+});
+
+['ff','ft'].forEach(id =>
+  document.getElementById(id).addEventListener('change', () => render(applyFilters()))
+);
+
+['fp','fd','fs','fm','fv'].forEach(id => buildSearchSelect(id));
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function countBy(rows, key) {
+  const m = {};
+  rows.forEach(r => { const v = r[key] || '(unknown)'; m[v] = (m[v] || 0) + 1; });
+  return m;
+}
+function topEntry(m) {
+  let best = ['—', 0];
+  for (const [k,v] of Object.entries(m)) if (v > best[1]) best = [k,v];
+  return best;
+}
+function fmtDate(d)  { return d ? d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—'; }
+function fmtShort(d) { return d ? d.toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'UTC'}) : ''; }
+
+function weekKey(d) {
+  const s = new Date(d);
+  s.setUTCDate(s.getUTCDate() - s.getUTCDay()); s.setUTCHours(0,0,0,0);
+  return s.toISOString().slice(0,10);
+}
+
+const GRID_COLOR = '#334155';
+const TICK_COLOR = '#94A3B8';
+const AX = { grid:{color:GRID_COLOR}, ticks:{color:TICK_COLOR}, border:{color:GRID_COLOR} };
+const TT = { backgroundColor:'#1E293B', titleColor:'#F1F5F9', bodyColor:TICK_COLOR, borderColor:GRID_COLOR, borderWidth:1, padding:10 };
+
+function destroyChart(name) { if (charts[name]) { charts[name].destroy(); delete charts[name]; } }
+
+// ── Render orchestrator ───────────────────────────────────────────────────────
+function render(rows) {
+  const f = getFilters();
+  const active = Object.values(f).filter(Boolean).length;
+  document.getElementById('active-badge').textContent = active ? `${active} filter${active>1?'s':''}` : '';
+  renderStats(rows);
+  renderDevChart(rows);
+  renderProcChart(rows);
+  renderTimeline(rows);
+  renderVersionChart(rows);
+  renderHeatmap(rows);
+  renderPatterns(rows);
+  renderTable(rows);
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function renderStats(rows) {
+  document.getElementById('s-total').textContent = rows.length || '0';
+  const devSet  = new Set(rows.map(r => r.element_name));
+  const siteSet = new Set(rows.map(r => r.site_name).filter(Boolean));
+  document.getElementById('s-devs').textContent  = devSet.size;
+  document.getElementById('s-sites').textContent = `${siteSet.size} site${siteSet.size!==1?'s':''}`;
+
+  const dates = rows.map(r => r._date).filter(Boolean);
+  document.getElementById('s-span').textContent = dates.length
+    ? `${fmtDate(new Date(Math.min(...dates)))} → ${fmtDate(new Date(Math.max(...dates)))}`
+    : '—';
+
+  const devCounts  = countBy(rows, 'element_name');
+  const procCounts = countBy(rows, 'process_name');
+  const [topDev,  topDevN]  = topEntry(devCounts);
+  const [topProc, topProcN] = topEntry(procCounts);
+  document.getElementById('s-topdev-n').textContent  = rows.length ? topDevN  : '—';
+  document.getElementById('s-topdev').textContent    = rows.length ? topDev   : '—';
+  document.getElementById('s-topproc-n').textContent = rows.length ? topProcN : '—';
+  document.getElementById('s-topproc').textContent   = rows.length ? topProc  : '—';
+}
+
+// ── Device bar chart ─────────────────────────────────────────────────────────
+function renderDevChart(rows) {
+  const sorted = Object.entries(countBy(rows, 'element_name')).sort((a,b)=>b[1]-a[1]).slice(0,20);
+  const canvas = document.getElementById('ch-dev');
+  const h = Math.max(180, sorted.length * 28);
+  document.getElementById('ch-dev-wrap').style.height = h + 'px';
+  destroyChart('dev');
+  if (!sorted.length) return;
+  charts.dev = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: sorted.map(([k])=>k),
+      datasets: [{
+        data: sorted.map(([,v])=>v),
+        backgroundColor: sorted.map((_,i)=>catColor(i)+'BB'),
+        borderColor:     sorted.map((_,i)=>catColor(i)),
+        borderWidth:1, borderRadius:4, borderSkipped:false,
+      }]
+    },
+    options: {
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{...TT, callbacks:{label:c=>`  ${c.raw} restarts`}} },
+      scales:{
+        x:{...AX, beginAtZero:true, ticks:{...AX.ticks,stepSize:1}},
+        y:{...AX, grid:{display:false}, ticks:{color:'#F1F5F9',font:{size:11}}},
+      }
+    }
+  });
+}
+
+// ── Process doughnut ─────────────────────────────────────────────────────────
+function renderProcChart(rows) {
+  const sorted = Object.entries(countBy(rows,'process_name')).sort((a,b)=>b[1]-a[1]);
+  destroyChart('proc');
+  if (!sorted.length) return;
+  charts.proc = new Chart(document.getElementById('ch-proc').getContext('2d'), {
+    type:'doughnut',
+    data:{
+      labels: sorted.map(([k])=>k),
+      datasets:[{
+        data: sorted.map(([,v])=>v),
+        backgroundColor: sorted.map(([k])=>procColor(k)+'DD'),
+        borderColor:'#1E293B', borderWidth:2,
+      }]
+    },
+    options:{
+      responsive:true, cutout:'62%',
+      plugins:{
+        legend:{
+          display:true, position:'bottom',
+          labels:{
+            color:TICK_COLOR, font:{size:11}, boxWidth:12, padding:12,
+            generateLabels: ch => ch.data.labels.map((l,i)=>({
+              text:`${l} (${ch.data.datasets[0].data[i]})`,
+              fillStyle: ch.data.datasets[0].backgroundColor[i],
+              strokeStyle:'#1E293B', index:i,
+            }))
+          }
+        },
+        tooltip:{...TT, callbacks:{label:c=>`  ${c.label}: ${c.raw}`}}
+      }
+    }
+  });
+}
+
+// ── Timeline line chart ───────────────────────────────────────────────────────
+function renderTimeline(rows) {
+  const byDay = {};
+  rows.forEach(r => { if (!r._date) return; const k=toISO(r._date); byDay[k]=(byDay[k]||0)+1; });
+  const days = Object.keys(byDay).sort();
+  destroyChart('time');
+  if (!days.length) return;
+  charts.time = new Chart(document.getElementById('ch-time').getContext('2d'), {
+    type:'line',
+    data:{
+      labels:days,
+      datasets:[{
+        label:'Restarts', data:days.map(d=>byDay[d]),
+        borderColor:'#38BDF8', backgroundColor:'rgba(56,189,248,.1)',
+        borderWidth:2, tension:0.3, fill:true,
+        pointRadius:days.length>60?0:3, pointHoverRadius:6, pointBackgroundColor:'#38BDF8',
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{...TT}},
+      scales:{
+        x:{...AX, ticks:{...AX.ticks,maxTicksLimit:24,maxRotation:45}},
+        y:{...AX, beginAtZero:true, ticks:{...AX.ticks,stepSize:1}},
+      }
+    }
+  });
+}
+
+// ── Version breakdown ─────────────────────────────────────────────────────────
+function renderVersionChart(rows) {
+  destroyChart('ver');
+  const wrap = document.getElementById('ver-table-wrap');
+
+  if (!rows.length) { wrap.innerHTML = ''; return; }
+
+  // build version × process matrix
+  const versions = [...new Set(rows.map(r => r.device_version).filter(Boolean))].sort();
+  const processes = [...new Set(rows.map(r => r.process_name).filter(Boolean))].sort();
+
+  // grid[version][process] = count
+  const grid = {};
+  versions.forEach(v => { grid[v] = {}; processes.forEach(p => grid[v][p] = 0); });
+  rows.forEach(r => {
+    if (r.device_version && r.process_name) grid[r.device_version][r.process_name]++;
+  });
+
+  // stacked bar: one dataset per process
+  const datasets = processes.map(proc => ({
+    label: proc,
+    data: versions.map(v => grid[v][proc] || 0),
+    backgroundColor: procColor(proc) + 'CC',
+    borderColor: procColor(proc),
+    borderWidth: 1,
+    borderRadius: 3,
+  }));
+
+  // auto-size height by version count
+  document.getElementById('ch-ver-wrap').style.height =
+    Math.max(180, versions.length * 42) + 'px';
+
+  charts.ver = new Chart(document.getElementById('ch-ver').getContext('2d'), {
+    type: 'bar',
+    data: { labels: versions, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true, position: 'bottom',
+          labels: { color: TICK_COLOR, font: { size: 11 }, boxWidth: 12, padding: 10 }
+        },
+        tooltip: {
+          ...TT,
+          callbacks: {
+            title: ctx => `Version: ${ctx[0].label}`,
+            label:  ctx => `  ${ctx.dataset.label}: ${ctx.raw}`,
+            footer: ctx => {
+              const total = ctx.reduce((s, c) => s + c.raw, 0);
+              return `  Total: ${total}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ...AX, stacked: true, ticks: { ...AX.ticks, font: { size: 12, weight: '600' } } },
+        y: { ...AX, stacked: true, beginAtZero: true, ticks: { ...AX.ticks, stepSize: 1 } },
+      }
+    }
+  });
+
+  // summary table below chart
+  const totals = versions.map(v => processes.reduce((s, p) => s + grid[v][p], 0));
+  let html = `<table style="border-collapse:collapse;font-size:11px;width:100%">
+    <thead><tr>
+      <th style="background:var(--surf2);color:var(--muted);padding:5px 10px;border:1px solid var(--brd);text-align:left;white-space:nowrap">Process \\ Version</th>
+      ${versions.map(v=>`<th style="background:var(--surf2);color:var(--muted);padding:5px 8px;border:1px solid var(--brd);text-align:center;white-space:nowrap">${v}</th>`).join('')}
+      <th style="background:var(--surf2);color:var(--hi);padding:5px 8px;border:1px solid var(--brd);text-align:center">Total</th>
+    </tr></thead><tbody>`;
+
+  processes.forEach(proc => {
+    const row = versions.map(v => grid[v][proc] || 0);
+    const rowTotal = row.reduce((a,b)=>a+b,0);
+    if (!rowTotal) return;
+    html += `<tr>
+      <td style="border:1px solid var(--brd);padding:4px 10px;white-space:nowrap">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${procColor(proc)};margin-right:6px;vertical-align:middle"></span>${proc}
+      </td>
+      ${row.map(n=>`<td style="border:1px solid var(--brd);padding:4px 8px;text-align:center;color:${n?'var(--text)':'var(--muted)'}">${n||'—'}</td>`).join('')}
+      <td style="border:1px solid var(--brd);padding:4px 8px;text-align:center;font-weight:700;color:var(--hi)">${rowTotal}</td>
+    </tr>`;
+  });
+
+  html += `<tr style="border-top:2px solid var(--brd)">
+    <td style="border:1px solid var(--brd);padding:5px 10px;font-weight:700;color:var(--muted)">Total</td>
+    ${totals.map(n=>`<td style="border:1px solid var(--brd);padding:5px 8px;text-align:center;font-weight:700">${n}</td>`).join('')}
+    <td style="border:1px solid var(--brd);padding:5px 8px;text-align:center;font-weight:700;color:var(--hi)">${totals.reduce((a,b)=>a+b,0)}</td>
+  </tr></tbody></table>`;
+  wrap.innerHTML = html;
+}
+
+// ── Heatmap ───────────────────────────────────────────────────────────────────
+function renderHeatmap(rows) {
+  const wrap = document.getElementById('hm-wrap');
+  if (!rows.length) { wrap.innerHTML='<div class="empty">No data</div>'; return; }
+  const dates = rows.map(r=>r._date).filter(Boolean);
+  if (!dates.length) { wrap.innerHTML='<div class="empty">No timestamps</div>'; return; }
+
+  const minD = new Date(Math.min(...dates)), maxD = new Date(Math.max(...dates));
+  const weeks = [];
+  const cur = new Date(minD);
+  cur.setUTCDate(cur.getUTCDate()-cur.getUTCDay()); cur.setUTCHours(0,0,0,0);
+  while (cur <= maxD) { weeks.push(new Date(cur)); cur.setUTCDate(cur.getUTCDate()+7); }
+
+  const devices = [...new Set(rows.map(r=>r.element_name))].sort();
+  const grid = {};
+  rows.forEach(r => {
+    if (!r._date) return;
+    const wk = weekKey(r._date);
+    if (!grid[r.element_name]) grid[r.element_name]={};
+    grid[r.element_name][wk]=(grid[r.element_name][wk]||0)+1;
+  });
+  const maxVal = Math.max(1,...devices.flatMap(d=>weeks.map(w=>grid[d]?.[weekKey(w)]||0)));
+
+  const wkFmt = w => w.toLocaleString('en',{month:'short',day:'numeric',timeZone:'UTC'});
+  let html = '<table class="hm"><thead><tr><th>Device</th>';
+  weeks.forEach(w => html+=`<th class="wk">${wkFmt(w)}</th>`);
+  html += '</tr></thead><tbody>';
+  devices.forEach(dev => {
+    html += `<tr><td class="dn" title="${dev}">${dev}</td>`;
+    weeks.forEach(w => {
+      const k = weekKey(w), cnt = grid[dev]?.[k]||0;
+      const bg=heatColor(cnt,maxVal), fg=heatText(cnt,maxVal);
+      html+=`<td style="background:${bg};color:${fg}" title="${dev} · ${k}: ${cnt}">${cnt||''}</td>`;
+    });
+    html+='</tr>';
+  });
+  wrap.innerHTML = html+'</tbody></table>';
+}
+
+// ── Patterns ──────────────────────────────────────────────────────────────────
+function renderPatterns(rows) {
+  const el = document.getElementById('patterns');
+  if (!rows.length) { el.innerHTML='<div class="empty">No data</div>'; return; }
+
+  // top devices
+  const topDevs = Object.entries(countBy(rows,'element_name')).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  // rapid recurrence: same device ≥2 events within 24h
+  const byDev = {};
+  rows.forEach(r => { if (!r._date) return; (byDev[r.element_name]=byDev[r.element_name]||[]).push(r._date.getTime()); });
+  const rapid = Object.entries(byDev).filter(([,ts]) => {
+    const s = [...ts].sort((a,b)=>a-b);
+    for (let i=1;i<s.length;i++) if (s[i]-s[i-1]<86_400_000) return true;
+    return false;
+  }).map(([d])=>d);
+
+  // repeated process+device combos
+  const combos = {};
+  rows.forEach(r => { const k=`${r.process_name}|${r.element_name}`; combos[k]=(combos[k]||0)+1; });
+  const topCombos = Object.entries(combos).filter(([,v])=>v>1).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  // most recent events
+  const recent = [...rows].filter(r=>r._date).sort((a,b)=>b._date-a._date).slice(0,5);
+
+  function badge(n) { return `<span class="badge${n>=20?' crit':n>=5?' warn':''}">${n}</span>`; }
+
+  el.innerHTML = `
+    <div class="pc">
+      <h3>Top Devices by Restart Count</h3>
+      ${topDevs.map(([d,n],i)=>`
+        <div class="pi">
+          <span class="nm" title="${d}"><span class="dot" style="background:${catColor(i)}"></span>${d}</span>
+          ${badge(n)}
+        </div>`).join('')}
+    </div>
+
+    <div class="pc">
+      <h3>Rapid Recurrence <span style="font-weight:400;font-size:10px">≥2 events within 24 h</span></h3>
+      ${rapid.length
+        ? rapid.slice(0,5).map(d=>`<div class="pi"><span class="nm" title="${d}">${d}</span><span class="badge warn">⚠ rapid</span></div>`).join('')
+        : '<div class="empty">None detected</div>'}
+    </div>
+
+    <div class="pc">
+      <h3>Repeated Process + Device</h3>
+      ${topCombos.map(([k,n])=>{
+          const [proc,dev]=k.split('|');
+          return `<div class="pi">
+            <span class="nm" title="${proc} on ${dev}"><span class="dot" style="background:${procColor(proc)}"></span><b>${proc}</b> — ${dev}</span>
+            ${badge(n)}
+          </div>`;
+        }).join('') || '<div class="empty">None</div>'}
+    </div>
+
+    <div class="pc">
+      <h3>Most Recent Events</h3>
+      ${recent.map(r=>`
+        <div class="pi">
+          <span class="nm"><span class="dot" style="background:${procColor(r.process_name)}"></span><b>${r.process_name}</b> — ${r.element_name}</span>
+          <span style="color:var(--muted);font-size:10px;white-space:nowrap">${fmtShort(r._date)}</span>
+        </div>`).join('')}
+    </div>`;
+}
+
+// ── Table ─────────────────────────────────────────────────────────────────────
+document.querySelectorAll('thead th').forEach(th => th.addEventListener('click', () => {
+  const col = th.dataset.col;
+  if (sortCol === col) sortDir *= -1; else { sortCol = col; sortDir = 1; }
+  renderTable(applyFilters());
+}));
+
+function renderTable(rows) {
+  const sorted = [...rows].sort((a,b) => {
+    const av=a[sortCol]||'', bv=b[sortCol]||'';
+    return av<bv ? -sortDir : av>bv ? sortDir : 0;
+  });
+  document.querySelectorAll('thead th').forEach(th => {
+    th.classList.remove('asc','desc');
+    if (th.dataset.col===sortCol) th.classList.add(sortDir===1?'asc':'desc');
+  });
+  document.getElementById('tbl-count').textContent = `${sorted.length} events`;
+  document.getElementById('tbody').innerHTML = sorted.map(r=>`
+    <tr>
+      <td>${r.raised_time||''}</td>
+      <td>${r.element_name||''}</td>
+      <td><span class="dot" style="background:${procColor(r.process_name)}"></span>${r.process_name||''}</td>
+      <td>${r.site_name||''}</td>
+      <td>${r.model_name||''}</td>
+      <td>${r.device_version||''}</td>
+      <td style="color:var(--muted);font-size:11px">${r.hardware_id||''}</td>
+    </tr>`).join('');
+}
+
+// Chart.js global defaults
+Chart.defaults.font.family = "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
+Chart.defaults.font.size   = 12;
+</script>
+</body>
+</html>
