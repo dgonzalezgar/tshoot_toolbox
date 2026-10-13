@@ -165,9 +165,9 @@ All commands link to the [official ION CLI reference](https://docs.paloaltonetwo
 
 **Example — isolate a specific time window:**
 ```
-debug logs dump start=2026-09-22T05:00:00 end=2026-09-22T05:06:00 flow-ctrl
-debug logs dump start=2026-08-14T02:00:00 end=2026-08-14T12:00:00 event | grep NETWORK_DIRECTINTERNET_DOWN
-debug logs dump start=2026-10-01 ham | grep "peer connection"
+debug logs dump start=2025-03-11T09:00:00 end=2025-03-11T09:10:00 flow-ctrl
+debug logs dump start=2025-04-02T14:00:00 end=2025-04-02T18:00:00 event | grep NETWORK_DIRECTINTERNET_DOWN
+debug logs dump start=2025-05-20 ham | grep "peer connection"
 ```
 
 > Official reference: [debug logs](https://docs.paloaltonetworks.com/prisma-sd-wan/ion-cli-reference/use-cli-commands)
@@ -233,31 +233,31 @@ The ION `tcpdump` command captures on a named interface or `any`, with BPF filte
 
 ```bash
 # NTP troubleshooting — check if NTP packets reaching/leaving ION
-tcpdump lan4 args="net 10.112.54.64/27 and port 123" show
-tcpdump any args="net 10.112.54.64/27 and port 123" show
+tcpdump lan4 args="net 192.168.47.0/27 and port 123" show
+tcpdump any args="net 192.168.47.0/27 and port 123" show
 
 # Connectivity check for a host, any interface
-tcpdump any args="host 10.116.232.235" show
-tcpdump 19 args="host 10.116.232.235" show
+tcpdump any args="host 10.54.3.21" show
+tcpdump 7 args="host 10.54.3.21" show
 
 # With Ethernet headers (useful to verify MAC/ARP behaviour)
-tcpdump any args="host 10.116.232.235 -e" show
+tcpdump any args="host 10.54.3.21 -e" show
 
 # BGP session on a tunnel interface
-tcpdump AUTO-PRISMA_IPSEC-Tunnel_eu-west-2_5 args="port 179" show
-tcpdump PRISMA-ACCESS-RESIDENT args="host 10.63.248.2 and port 179" show
+tcpdump IPSEC-Tunnel-WAN1-5 args="port 179" show
+tcpdump PRISMA-ACCESS-RESIDENT args="host 10.91.6.44 and port 179" show
 
 # DHCP (catch both discover/offer directions)
-tcpdump any args="host 172.19.28.1 and (port 68 or port 67)" show
+tcpdump any args="host 172.22.15.3 and (port 68 or port 67)" show
 
 # Two-sided host filter
-tcpdump any args="host 10.122.0.7 and (host 10.177.3.39 or host 10.177.3.40)" show
+tcpdump any args="host 10.73.8.100 and (host 10.82.1.15 or host 10.82.1.16)" show
 
-# On a sub-interface (e.g. AE-1.259)
-tcpdump AE-1.259 args="host 207.166.86.170" show
+# On a sub-interface (e.g. AE-1.100)
+tcpdump AE-1.100 args="host 203.0.113.42" show
 ```
 
-> **Interface naming tips:** Use the interface number shown in `dump interface status`, a named logical interface (e.g. `AE-1.259`, `PRISMA-ACCESS-RESIDENT`), or `any` to capture across all interfaces. Run `tcpdump` at the DC LAN interface to confirm the ION is forwarding traffic before checking further upstream.
+> **Interface naming tips:** Use the interface number shown in `dump interface status`, a named logical interface (e.g. `AE-1.100`, `PRISMA-ACCESS-RESIDENT`), or `any` to capture across all interfaces. Run `tcpdump` at the DC LAN interface to confirm the ION is forwarding traffic before checking further upstream.
 
 > Official reference: [tcpdump](https://docs.paloaltonetworks.com/prisma-sd-wan/ion-cli-reference/use-cli-commands)
 
