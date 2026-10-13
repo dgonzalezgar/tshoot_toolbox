@@ -211,6 +211,58 @@ debug logs dump start=2026-10-01 ham | grep "peer connection"
 
 ---
 
+## Packet Capture (tcpdump)
+
+The ION `tcpdump` command captures on a named interface or `any`, with BPF filters passed via `args=`. Always append `show` to print output to the terminal.
+
+**Syntax:** `tcpdump <interface> args="<bpf-filter>" show`
+
+| Example | What it captures |
+|---|---|
+| `tcpdump any args="host <ip>" show` | All traffic to/from an IP on any interface |
+| `tcpdump any args="host <ip> -e" show` | Same, with Ethernet header (shows MACs) |
+| `tcpdump <iface-id> args="host <ip>" show` | Traffic to/from an IP on a specific interface |
+| `tcpdump any args="net <subnet> and port <port>" show` | Traffic for a subnet + port combo |
+| `tcpdump <iface> args="net <subnet> and port <port>" show` | Subnet + port on a specific interface |
+| `tcpdump any args="host <ip> and (port 67 or port 68)" show` | DHCP traffic for a host |
+| `tcpdump any args="host <ip1> and (host <ip2> or host <ip3>)" show` | Traffic between multiple hosts |
+| `tcpdump <tunnel-iface> args="port 179" show` | BGP on a specific tunnel interface |
+| `tcpdump <tunnel-iface> args="host <ip> and port 179" show` | BGP from a specific peer on a tunnel |
+
+**Real examples from cases:**
+
+```bash
+# NTP troubleshooting — check if NTP packets reaching/leaving ION
+tcpdump lan4 args="net 10.112.54.64/27 and port 123" show
+tcpdump any args="net 10.112.54.64/27 and port 123" show
+
+# Connectivity check for a host, any interface
+tcpdump any args="host 10.116.232.235" show
+tcpdump 19 args="host 10.116.232.235" show
+
+# With Ethernet headers (useful to verify MAC/ARP behaviour)
+tcpdump any args="host 10.116.232.235 -e" show
+
+# BGP session on a tunnel interface
+tcpdump AUTO-PRISMA_IPSEC-Tunnel_eu-west-2_5 args="port 179" show
+tcpdump PRISMA-ACCESS-RESIDENT args="host 10.63.248.2 and port 179" show
+
+# DHCP (catch both discover/offer directions)
+tcpdump any args="host 172.19.28.1 and (port 68 or port 67)" show
+
+# Two-sided host filter
+tcpdump any args="host 10.122.0.7 and (host 10.177.3.39 or host 10.177.3.40)" show
+
+# On a sub-interface (e.g. AE-1.259)
+tcpdump AE-1.259 args="host 207.166.86.170" show
+```
+
+> **Interface naming tips:** Use the interface number shown in `dump interface status`, a named logical interface (e.g. `AE-1.259`, `PRISMA-ACCESS-RESIDENT`), or `any` to capture across all interfaces. Run `tcpdump` at the DC LAN interface to confirm the ION is forwarding traffic before checking further upstream.
+
+> Official reference: [tcpdump](https://docs.paloaltonetworks.com/prisma-sd-wan/ion-cli-reference/use-cli-commands)
+
+---
+
 ## Service Links
 
 | Command | What it tells you |
